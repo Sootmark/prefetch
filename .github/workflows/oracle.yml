@@ -1,0 +1,34 @@
+name: oracle
+
+# Eric Zimmerman's PECmd on the open prefetch files in tests/fixtures/pf/,
+# for tests/oracle/PECmd_Output.csv. PECmd runs only on Windows (it
+# decompresses Windows 10 and 11 files with Windows' own library). Run it
+# by hand when the files change, and commit the CSV it uploads.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pecmd:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - name: PECmd
+        run: |
+          curl -sSfL -o PECmd.zip https://download.ericzimmermanstools.com/net9/PECmd.zip
+          unzip -q PECmd.zip -d pecmd
+          dotnet pecmd/PECmd.dll -d tests/fixtures/pf --csv out --csvf PECmd_Output.csv -q
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pecmd
+          path: out/PECmd_Output.csv
+          if-no-files-found: error
