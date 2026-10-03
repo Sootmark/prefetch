@@ -1,7 +1,8 @@
 name: oracle
 
 # Eric Zimmerman's PECmd on the open prefetch files in tests/fixtures/pf/,
-# for tests/oracle/PECmd_Output.csv. PECmd runs only on Windows (it
+# for tests/oracle/PECmd_Output.csv (and its timeline, which the
+# sootmark-adapters tests use). PECmd runs only on Windows (it
 # decompresses Windows 10 and 11 files with Windows' own library). Run it
 # by hand when the files change, and commit the CSV it uploads.
 
@@ -30,5 +31,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pecmd
-          path: out/PECmd_Output.csv
+          path: out/*.csv
           if-no-files-found: error
