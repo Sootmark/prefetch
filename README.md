@@ -28,7 +28,7 @@ for volume in &prefetch.volumes {
 
 ## How it's checked
 
-- Real files of every version (17, 23, 26, both layouts of 30, compressed and not) against Eric Zimmerman's PECmd on every field it reports, and the decompressor against an independent implementation, byte for byte. The files aren't redistributable: the test runs when they're in `tests/fixtures-real/` and says so when they aren't.
+- Openly licensed files of every version, `tests/fixtures/pf/`: 62 from Eric Zimmerman's Prefetch test set (MIT) and plaso's test data (Apache-2.0), versions 17 to 26, Windows 10's compressed 30 and Windows 11's 31. Every field Eric Zimmerman's PECmd reports matches (its output in `tests/oracle/`, written on Windows by `.github/workflows/oracle.yml`), and the 10 compressed files decompress byte for byte as libyal's libfwnt does.
 - Files built byte by byte for every version and layout; a round-trip property test through an encoder written from MS-XCA; no panic on garbage, truncated or corrupted input (property tests).
 
 ## Licence

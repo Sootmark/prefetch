@@ -1,23 +1,33 @@
-//! Real prefetch files against two independent oracles: an independent
-//! LZ77+Huffman decompressor's output for every compressed file, and
-//! Eric Zimmerman's PECmd for every field it reports.
+//! Openly licensed prefetch files of every version against two
+//! independent oracles: libyal's libfwnt for every compressed file,
+//! byte for byte, and Eric Zimmerman's PECmd for every field it reports.
 //!
-//! The files aren't redistributable: put them in `tests/fixtures-real/`
-//! (`pf/` as found, `scca/` decompressed by the other tool, and PECmd's
-//! `PECmd_Output.csv` for `scca/`). Without them this test says so and
-//! passes.
+//! - `tests/fixtures/pf/`: the files as found. `ez/` is the test set of
+//!   EricZimmerman/Prefetch (MIT): versions 17, 23, 26 and Windows 10's
+//!   compressed 30, and a file that isn't one. `plaso/` is plaso's
+//!   (Apache-2.0): 17, 23, 26, compressed 30 and Windows 11's 31.
+//! - `tests/fixtures/scca/`: the compressed ones, decompressed by libfwnt
+//!   (`pyfwnt.lzxpress_huffman_decompress`).
+//! - `tests/oracle/PECmd_Output.csv`: PECmd on `pf/`, which only runs on
+//!   Windows: `.github/workflows/oracle.yml` writes it.
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-fn fixtures() -> Option<&'static Path> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures-real");
-    if dir.join("PECmd_Output.csv").exists() {
-        Some(Box::leak(dir.into_boxed_path()))
-    } else {
-        eprintln!("no real prefetch fixtures in {}: skipped", dir.display());
-        None
+fn fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+/// Every file under `dir`, as paths relative to it.
+fn files(dir: &Path, under: &Path, found: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files(&path, under, found);
+        } else if path.file_name().is_some_and(|n| n != "LICENSE") {
+            found.push(path.strip_prefix(under).unwrap().to_owned());
+        }
     }
 }
 
@@ -62,17 +72,20 @@ fn fields(line: &str) -> Vec<String> {
     out
 }
 
-fn pecmd(dir: &Path) -> HashMap<String, HashMap<String, String>> {
-    let text = fs::read_to_string(dir.join("PECmd_Output.csv")).unwrap();
+/// PECmd's rows, by file under `pf/`.
+fn pecmd() -> HashMap<String, HashMap<String, String>> {
+    let csv = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle/PECmd_Output.csv");
+    let text = fs::read_to_string(csv).unwrap();
     let mut lines = text.trim_start_matches('\u{feff}').lines();
     let header = fields(lines.next().unwrap());
     lines
         .map(|line| {
             let row: HashMap<String, String> = header.iter().cloned().zip(fields(line)).collect();
-            let name = row["SourceFilename"]
-                .rsplit(['/', '\\'])
-                .next()
+            let source = row["SourceFilename"].replace('\\', "/");
+            let name = source
+                .split_once("tests/fixtures/pf/")
                 .unwrap()
+                .1
                 .to_owned();
             (name, row)
         })
@@ -80,37 +93,37 @@ fn pecmd(dir: &Path) -> HashMap<String, HashMap<String, String>> {
 }
 
 #[test]
-fn decompression_matches_the_other_decompressor() {
-    let Some(dir) = fixtures() else { return };
+fn decompression_matches_libfwnt() {
+    let pf = fixtures().join("pf");
+    let mut names = Vec::new();
+    files(&pf, &pf, &mut names);
     let mut compressed = 0;
-    for entry in fs::read_dir(dir.join("pf")).unwrap() {
-        let path = entry.unwrap().path();
-        let file = fs::read(&path).unwrap();
+    for name in names {
+        let file = fs::read(pf.join(&name)).unwrap();
         if !file.starts_with(b"MAM") {
             continue;
         }
         let size = u32::from_le_bytes(file[4..8].try_into().unwrap()) as usize;
         let ours = prefetch::xpress::decompress(&file[8..], size).unwrap();
-        let theirs = fs::read(dir.join("scca").join(path.file_name().unwrap())).unwrap();
+        let theirs = fs::read(fixtures().join("scca").join(&name)).unwrap();
         assert!(
             ours == theirs,
             "{}: decompressed bytes differ",
-            path.display()
+            name.display()
         );
         compressed += 1;
     }
-    assert!(compressed >= 10, "only {compressed} compressed files");
+    assert_eq!(compressed, 10);
 }
 
 #[test]
 fn every_field_matches_pecmd() {
-    let Some(dir) = fixtures() else { return };
-    let expected = pecmd(dir);
-    assert!(expected.len() >= 14);
+    let expected = pecmd();
+    assert_eq!(expected.len(), 62);
     for (name, row) in &expected {
         // The file as found (compressed or not) must parse as PECmd read
         // the decompressed copy.
-        let parsed = prefetch::parse(&fs::read(dir.join("pf").join(name)).unwrap()).unwrap();
+        let parsed = prefetch::parse(&fs::read(fixtures().join("pf").join(name)).unwrap()).unwrap();
         let at = |field: &str| row[field].as_str();
         assert!(parsed.problems.is_empty(), "{name}: {:?}", parsed.problems);
         assert_eq!(parsed.executable, at("ExecutableName"), "{name}");
@@ -148,4 +161,10 @@ fn every_field_matches_pecmd() {
             .collect();
         assert_eq!(directories, at("Directories"), "{name}: directories");
     }
+}
+
+#[test]
+fn a_file_that_isnt_prefetch_is_refused() {
+    let file = fs::read(fixtures().join("pf/ez/Bad/notAPrefetch.pf")).unwrap();
+    assert!(prefetch::parse(&file).is_err());
 }

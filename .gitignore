@@ -1,4 +1,4 @@
 /target
 .DS_Store
-# Real prefetch files are not redistributable; drop local copies here.
+# Local files, never committed.
 /tests/fixtures-real/
